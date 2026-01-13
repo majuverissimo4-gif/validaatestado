@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Validação de Assinatura Digital</title>
+    <style>
+        /* --- ESTILOS GERAIS (CSS) --- */
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        body { background-color: #f4f4f4; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+
+        /* Card Principal */
+        .card { background-color: #fff; width: 100%; max-width: 600px; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; }
+        .card__header { background-color: #005691; color: #fff; padding: 15px 20px; font-weight: 600; }
+        .card__body { padding: 30px 40px; }
+        
+        /* Formulário */
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; margin-bottom: 8px; font-size: 14px; color: #333; }
+        .required { color: #d9534f; }
+        .form-control { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; outline: none; }
+        .form-control:focus { border-color: #66afe9; }
+        
+        /* Botões */
+        .button-row { display: flex; gap: 15px; margin-top: 30px; }
+        .btn { flex: 1; padding: 10px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; font-weight: 500; }
+        .btn-success { background-color: #5cb85c; color: white; border-color: #4cae4c; }
+        .btn-success:hover { background-color: #449d44; }
+        .btn-default { background-color: #fff; color: #333; border-color: #ccc; }
+
+        /* --- ESTILOS DOS MODAIS (Pop-ups) --- */
+        .modal-overlay {
+            display: none; /* Escondido por padrão */
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.6); /* Fundo escuro transparente */
+            z-index: 1000;
+            justify-content: center; align-items: center;
+        }
+
+        /* Classe para mostrar o modal */
+        .modal-overlay.active { display: flex; }
+
+        /* Modal de Erro (Atenção) */
+        .modal-error { width: 400px; background: #fff; border-radius: 4px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); overflow: hidden; animation: fadeIn 0.3s; }
+        .modal-error-header { background-color: #ff6b6b; color: white; padding: 10px 15px; font-weight: bold; text-transform: uppercase; font-size: 14px; }
+        .modal-error-body { padding: 20px; font-size: 13px; color: #333; }
+        .modal-error-footer { padding: 10px 15px; text-align: right; border-top: 1px solid #eee; background: #f9f9f9; }
+        .btn-modal { padding: 6px 12px; border: 1px solid #ccc; background: #e6e6e6; border-radius: 3px; cursor: pointer; font-size: 12px; }
+
+        /* Modal de Sucesso (PDF) */
+        .modal-pdf { width: 90%; height: 90%; background: #fff; display: flex; flex-direction: column; box-shadow: 0 5px 25px rgba(0,0,0,0.5); animation: fadeIn 0.3s; }
+        .modal-pdf-header { background-color: #005691; color: white; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; }
+        .close-icon { cursor: pointer; font-weight: bold; font-size: 18px; }
+        .pdf-viewer { flex: 1; width: 100%; border: none; background: #525659; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <div class="card__header">Assinatura Digital</div>
+        <div class="card__body">
+            <form id="validationForm">
+                <div class="form-group">
+                    <label class="form-label">Código de verificação <span class="required">*</span></label>
+                    <input type="text" id="codigoInput" class="form-control" placeholder="Informe o código impresso">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Data de assinatura ou geração do documento <span class="required">*</span></label>
+                    <input type="date" id="dataInput" class="form-control">
+                </div>
+                <div class="button-row">
+                    <button type="submit" class="btn btn-success">Pesquisar</button>
+                    <button type="button" class="btn btn-default" onclick="limparCampos()">Limpar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="modalErro" class="modal-overlay">
+        <div class="modal-error">
+            <div class="modal-error-header">ATENÇÃO!</div>
+            <div class="modal-error-body">
+                O Documento não foi assinado eletronicamente, não foi possível fazer a validação.
+            </div>
+            <div class="modal-error-footer">
+                <button class="btn-modal" onclick="fecharModal('modalErro')">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalPDF" class="modal-overlay">
+        <div class="modal-pdf">
+            <div class="modal-pdf-header">
+                <span>Documento Original</span>
+                <span class="close-icon" onclick="fecharModal('modalPDF')">✕</span>
+            </div>
+            <iframe src="download.pdf" class="pdf-viewer"></iframe>
+        </div>
+    </div>
+
+    <script>
+        // --- LÓGICA JAVASCRIPT ---
+        
+        // Definição dos dados corretos
+        const CODIGO_CORRETO = "7U5HPXVRLTHL4LSP-010";
+        const DATA_CORRETA = "2026-01-13"; // Formato YYYY-MM-DD (padrão do input date)
+
+        const form = document.getElementById('validationForm');
+
+        form.addEventListener('submit', function(event) {
+            event.preventDefault(); // Impede a página de recarregar
+
+            // 1. Pegar os valores digitados
+            let codigoDigitado = document.getElementById('codigoInput').value.trim();
+            const dataDigitada = document.getElementById('dataInput').value;
+
+            // 2. Validação Lógica
+            // Convertemos para maiúsculo para evitar erro se o user digitar minúsculo
+            if (codigoDigitado.toUpperCase() === CODIGO_CORRETO && dataDigitada === DATA_CORRETA) {
+                // SUCESSO: Abre o PDF
+                document.getElementById('modalPDF').classList.add('active');
+            } else {
+                // ERRO: Abre o aviso de Atenção
+                document.getElementById('modalErro').classList.add('active');
+            }
+        });
+
+        // Funções auxiliares
+        function fecharModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        function limparCampos() {
+            document.getElementById('validationForm').reset();
+        }
+    </script>
+
+</body>
+</html>
